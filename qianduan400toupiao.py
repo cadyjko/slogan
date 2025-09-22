@@ -116,7 +116,7 @@ def main():
 
     # 用户标识输入
     if not st.session_state.voter_id:
-        st.subheader("请输入您的标识")
+        st.subheader("请输入您的姓名")
         voter_id = st.text_input("姓名", placeholder="请输入您的姓名")
         if st.button("开始投票"):
             if voter_id.strip():
@@ -436,5 +436,6 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
