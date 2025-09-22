@@ -61,42 +61,25 @@ def main():
 
 
 def load_slogan_data():
-    """加载口号数据"""
-    st.subheader("加载口号数据")
-
-    # 从本地文件加载
-    if os.path.exists(r"slogans.xlsx"):
-        try:
-            df = pd.read_excel("slogans.xlsx")
-            if '序号' in df.columns and '口号' in df.columns:
-                st.session_state.slogan_df = df
-                st.success(f"成功加载 {len(df)} 条口号")
-                st.rerun()
-            else:
-                st.error("Excel文件必须包含'序号'和'口号'列")
-        except Exception as e:
-            st.error(f"文件读取错误: {e}")
-    else:
-        # 手动输入或上传文件
-        option = st.radio("选择数据加载方式", ["手动输入", "上传Excel文件"])
-
-        if option == "手动输入":
-            st.info("请在程序同级目录下创建'slogans.xlsx'文件，包含'序号'和'口号'两列")
-        else:
-            uploaded_file = st.file_uploader("上传Excel文件", type=['xlsx'])
-            if uploaded_file is not None:
-                try:
-                    df = pd.read_excel(uploaded_file)
-                    if '序号' in df.columns and '口号' in df.columns:
-                        # 保存到本地
-                        df.to_excel("slogans.xlsx", index=False)
-                        st.session_state.slogan_df = df
-                        st.success(f"成功加载 {len(df)} 条口号")
-                        st.rerun()
-                    else:
-                        st.error("Excel文件必须包含'序号'和'口号'列")
-                except Exception as e:
-                    st.error(f"文件读取错误: {e}")
+     """从GitHub Raw URL加载口号数据"""
+    try:
+        # 替换为您的GitHub Raw URL
+        github_raw_url = "https://raw.githubusercontent.com/cadyjko/slogan/main/slogans.xlsx"
+        
+        response = requests.get(github_raw_url)
+        response.raise_for_status()
+        
+        # 从字节流读取Excel文件
+        df = pd.read_excel(BytesIO(response.content))
+        
+        if '序号' not in df.columns or '口号' not in df.columns:
+            st.error("Excel文件必须包含'序号'和'口号'列")
+            return None
+        
+        return df
+    except Exception as e:
+        st.error(f"从GitHub加载数据失败: {e}")
+        return None
 
 
 def display_voting_interface():
@@ -293,4 +276,5 @@ if __name__ == "__main__":
     if "admin" in query_params and query_params["admin"] == "true":
         admin_interface()
     else:
+
         main()
