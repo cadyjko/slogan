@@ -27,7 +27,7 @@ if 'voter_id' not in st.session_state:
 if 'voted' not in st.session_state:
     st.session_state.voted = False
 if 'max_votes' not in st.session_state:
-    st.session_state.max_votes = 10
+    st.session_state.max_votes = 20
 if 'all_votes_data' not in st.session_state:
     st.session_state.all_votes_data = {}
 if 'votes_df' not in st.session_state:
@@ -371,7 +371,7 @@ def admin_interface():
             voters = votes_df["投票人"].unique()
             for i, voter in enumerate(voters, 1):
                 voter_votes = len(votes_df[votes_df["投票人"] == voter])
-                status = "✅" if voter_votes <= 10 else "⚠️"
+                status = "✅" if voter_votes <= 20 else "⚠️"
                 st.write(f"{i}. {voter} - 投票数: {voter_votes} {status}")
 
     # 投票结果
@@ -436,3 +436,4 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
