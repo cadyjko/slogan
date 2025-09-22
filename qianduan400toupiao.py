@@ -29,9 +29,11 @@ if 'voted' not in st.session_state:
 if 'max_votes' not in st.session_state:
     st.session_state.max_votes = 10
 if 'current_selections' not in st.session_state:
-    st.session_state.current_selections = set()  # 修复问题2：保存当前页面的选择
+    st.session_state.current_selections = set()
 if 'votes_df' not in st.session_state:
-    st.session_state.votes_df = pd.DataFrame()  # 修复问题1：初始化votes_df
+    st.session_state.votes_df = pd.DataFrame()
+if 'last_updated' not in st.session_state:
+    st.session_state.last_updated = None
 
 
 def load_slogan_data_from_github():
@@ -71,7 +73,35 @@ def update_selections(selected_options):
     
     # 保存到session state
     st.session_state.votes[st.session_state.voter_id] = list(current_selection)
-    st.session_state.current_selections = current_selection  # 更新当前选择
+    st.session_state.current_selections = current_selection
+
+
+def save_votes_to_file():
+    """保存投票数据到文件"""
+    try:
+        votes_data = []
+        for voter, votes in st.session_state.votes.items():
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for slogan_id in votes:
+                votes_data.append({
+                    "投票人": voter,
+                    "口号序号": slogan_id,
+                    "投票时间": current_time
+                })
+
+        # 转换为DataFrame并存储在session state中
+        votes_df = pd.DataFrame(votes_data)
+        st.session_state.votes_df = votes_df
+        st.session_state.last_updated = datetime.now()
+
+        # 尝试保存到文件（在本地运行时有效）
+        try:
+            votes_df.to_excel("votes.xlsx", index=False)
+        except:
+            pass  # 在Streamlit Cloud中可能无法写入文件
+
+    except Exception as e:
+        st.error(f"保存投票数据时出错: {e}")
 
 
 def main():
@@ -127,6 +157,30 @@ def display_voting_interface():
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 1
 
+    # 获取当前用户的选择
+    current_selection = set(st.session_state.votes.get(st.session_state.voter_id, []))
+    
+    # 实时显示已选中口号数量
+    st.write(f"当前已选择 **{len(current_selection)}/{st.session_state.max_votes}** 条口号")
+    
+    # 显示选择进度条
+    progress = len(current_selection) / st.session_state.max_votes
+    st.progress(progress)
+
+    # 显示已选口号详情
+    if len(current_selection) > 0:
+        selected_slogans = df[df['序号'].isin(current_selection)]
+        with st.expander(f"查看已选口号 ({len(current_selection)}条)"):
+            for _, row in selected_slogans.iterrows():
+                st.write(f"{row['序号']}. {row['口号']}")
+            
+            # 添加清空选择按钮
+            if st.button("清空所有选择"):
+                st.session_state.votes[st.session_state.voter_id] = []
+                st.session_state.current_selections = set()
+                st.rerun()
+
+    # 分页控件
     col1, col2, col3 = st.columns([1, 2, 1])
     with col1:
         if st.button("上一页") and st.session_state.current_page > 1:
@@ -149,53 +203,34 @@ def display_voting_interface():
     end_idx = min(start_idx + page_size, len(filtered_df))
     current_page_df = filtered_df.iloc[start_idx:end_idx]
 
-    # 获取当前用户的选择
-    current_selection = set(st.session_state.votes.get(st.session_state.voter_id, []))
-    
-    # 修复问题3：实时显示已选中口号数量
-    st.write(f"当前已选择 **{len(current_selection)}/{st.session_state.max_votes}** 条口号")  # 加粗显示
-    
-    # 显示选择进度条
-    progress = len(current_selection) / st.session_state.max_votes
-    st.progress(progress)
+    # 显示口号和选择框 - 使用form来批量处理选择
+    with st.form(f"vote_form_page_{st.session_state.current_page}"):
+        selected_options = []
+        
+        for _, row in current_page_df.iterrows():
+            slogan_id = row['序号']
+            slogan_text = row['口号']
 
-    # 显示口号和选择框
-    selected_options = []
-    for _, row in current_page_df.iterrows():
-        slogan_id = row['序号']
-        slogan_text = row['口号']
+            # 检查是否已选择
+            is_selected = st.checkbox(
+                f"{slogan_id}. {slogan_text}",
+                value=slogan_id in current_selection,
+                key=f"checkbox_{st.session_state.current_page}_{slogan_id}"
+            )
 
-        # 检查是否已选择
-        is_selected = st.checkbox(
-            f"{slogan_id}. {slogan_text}",
-            value=slogan_id in current_selection,  # 修复问题2：使用当前选择状态
-            key=f"checkbox_{st.session_state.current_page}_{slogan_id}"  # 添加页码到key避免冲突
-        )
+            if is_selected:
+                selected_options.append(slogan_id)
+        
+        # 修复核心问题：在翻页前自动保存选择
+        if st.form_submit_button("保存当前页选择"):
+            # 更新选择状态
+            update_selections(selected_options)
+            st.success("选择已保存！")
+            st.rerun()
 
-        if is_selected:
-            selected_options.append(slogan_id)
-
-    # 实时更新选择状态
-    if st.button("更新选择", key="update_selections"):
-        update_selections(selected_options)
-        st.rerun()
-
-    # 显示已选口号详情
-    if len(current_selection) > 0:
-        selected_slogans = df[df['序号'].isin(current_selection)]
-        with st.expander(f"查看已选口号 ({len(current_selection)}条)"):
-            for _, row in selected_slogans.iterrows():
-                st.write(f"{row['序号']}. {row['口号']}")
-            
-            # 添加清空选择按钮
-            if st.button("清空所有选择"):
-                st.session_state.votes[st.session_state.voter_id] = []
-                st.session_state.current_selections = set()
-                st.rerun()
-
-    # 提交按钮
+    # 提交投票按钮
     if st.button("提交投票", type="primary"):
-        # 最终确认选择
+        # 最终确认选择（确保当前页的选择被保存）
         update_selections(selected_options)
         current_selection = st.session_state.votes.get(st.session_state.voter_id, [])
         
@@ -208,35 +243,8 @@ def display_voting_interface():
             st.session_state.voted = True
             save_votes_to_file()
             st.success(f"投票成功！您选择了 {len(current_selection)} 条口号。感谢您的参与。")
-            st.balloons()  # 庆祝动画
+            st.balloons()
             st.rerun()
-
-
-def save_votes_to_file():
-    """保存投票数据到文件"""
-    try:
-        votes_data = []
-        for voter, votes in st.session_state.votes.items():
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            for slogan_id in votes:
-                votes_data.append({
-                    "投票人": voter,
-                    "口号序号": slogan_id,
-                    "投票时间": current_time
-                })
-
-        # 转换为DataFrame并存储在session state中
-        votes_df = pd.DataFrame(votes_data)
-        st.session_state.votes_df = votes_df  # 修复问题1：确保votes_df被正确初始化
-
-        # 尝试保存到文件（在本地运行时有效）
-        try:
-            votes_df.to_excel("votes.xlsx", index=False)
-        except:
-            pass  # 在Streamlit Cloud中可能无法写入文件
-
-    except Exception as e:
-        st.error(f"保存投票数据时出错: {e}")
 
 
 def admin_interface():
@@ -245,12 +253,40 @@ def admin_interface():
 
     # 密码保护
     password = st.text_input("请输入管理员密码", type="password")
-    if password != "admin123":  # 请在实际使用时更改密码
-        if password:  # 只在输入密码后显示错误
+    if password != "admin123":
+        if password:
             st.error("密码错误")
         return
 
-    # 修复问题1：确保数据加载
+    # 成功登录后显示界面
+    st.success("管理员登录成功！")
+    
+    # 修复问题：添加独立的数据刷新按钮
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 刷新数据", type="primary"):
+            # 强制重新加载所有数据
+            st.session_state.slogan_df = load_slogan_data_from_github()
+            
+            # 重新加载投票数据
+            try:
+                if os.path.exists("votes.xlsx"):
+                    st.session_state.votes_df = pd.read_excel("votes.xlsx")
+                    st.session_state.last_updated = datetime.now()
+                    st.success("数据刷新成功！")
+                else:
+                    # 从session state重建投票数据
+                    save_votes_to_file()
+            except Exception as e:
+                st.error(f"刷新数据时出错: {e}")
+            
+            st.rerun()
+
+    # 显示最后更新时间
+    if st.session_state.last_updated:
+        st.write(f"最后更新时间: {st.session_state.last_updated.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 确保数据加载
     if st.session_state.slogan_df is None:
         st.info("正在加载口号数据...")
         st.session_state.slogan_df = load_slogan_data_from_github()
@@ -262,16 +298,22 @@ def admin_interface():
     st.success(f"成功加载 {len(df)} 条口号数据")
 
     # 检查是否有投票数据
-    if 'votes_df' not in st.session_state or st.session_state.votes_df.empty:
+    if st.session_state.votes_df.empty:
         # 尝试从文件加载投票数据
         try:
             if os.path.exists("votes.xlsx"):
                 st.session_state.votes_df = pd.read_excel("votes.xlsx")
+                st.session_state.last_updated = datetime.now()
                 st.success("从文件加载投票数据成功")
             else:
                 st.info("暂无投票数据，等待用户投票...")
-                return
-        except:
+                # 从session state的votes重建数据
+                if st.session_state.votes:
+                    save_votes_to_file()
+                    st.success("从内存数据重建投票记录")
+                else:
+                    return
+        except Exception as e:
             st.info("暂无投票数据，等待用户投票...")
             return
 
@@ -321,12 +363,12 @@ def admin_interface():
         orientation='h',
         title=f"前{top_n}名口号得票情况"
     )
-    fig.update_layout(height=600)  # 设置图表高度
+    fig.update_layout(height=600)
     st.plotly_chart(fig, use_container_width=True)
 
-    # 添加数据刷新按钮
-    if st.button("刷新数据"):
-        st.rerun()
+    # 显示原始投票记录
+    with st.expander("查看原始投票记录"):
+        st.dataframe(votes_df)
 
 
 # 运行应用
