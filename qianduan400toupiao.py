@@ -33,7 +33,7 @@ def load_slogan_data_from_github():
     """从GitHub Raw URL加载口号数据"""
     try:
         # 替换为您的GitHub Raw URL
-        github_raw_url = "https://raw.githubusercontent.com/您的用户名/您的仓库名/main/slogans.xlsx"
+        github_raw_url = "https://raw.githubusercontent.com/cadyjko/slogan/main/slogans.xlsx"
         
         response = requests.get(github_raw_url)
         response.raise_for_status()
@@ -64,7 +64,7 @@ def main():
     # 用户标识输入
     if not st.session_state.voter_id:
         st.subheader("请输入您的标识")
-        voter_id = st.text_input("姓名或工号", placeholder="请输入您的姓名或工号")
+        voter_id = st.text_input("姓名", placeholder="请输入您的姓名")
         if st.button("开始投票"):
             if voter_id.strip():
                 st.session_state.voter_id = voter_id.strip()
@@ -278,3 +278,4 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
