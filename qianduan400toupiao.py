@@ -144,7 +144,7 @@ def display_voting_interface():
 
     df = st.session_state.slogan_df
 
-    st.header(f"欢迎 {st.session_state.voter_id}，请选出您喜欢的口号")
+    st.header(f"欢迎 {st.session_state.voter_id}，本次初选共评选出470条口号，请选出最符合南岳衡山全球旅游品牌宣传的口号")
     
     # 获取当前用户的选择
     current_selection = set(st.session_state.all_votes_data.get(st.session_state.voter_id, []))
@@ -436,4 +436,5 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
