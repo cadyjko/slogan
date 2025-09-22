@@ -63,10 +63,10 @@ def main():
 
 
 def load_slogan_data():
-     """从GitHub Raw URL加载口号数据"""
+    """从GitHub Raw URL加载口号数据"""
     try:
         # 替换为您的GitHub Raw URL
-        github_raw_url = "https://raw.githubusercontent.com/cadyjko/slogan/main/slogans.xlsx"
+        github_raw_url = "https://github.com/cadyjko/slogan/blob/main/slogans.xlsx"
         
         response = requests.get(github_raw_url)
         response.raise_for_status()
@@ -280,4 +280,5 @@ if __name__ == "__main__":
     else:
 
         main()
+
 
