@@ -7,6 +7,8 @@ import re
 import json
 import uuid
 from datetime import datetime
+import requests
+from io import BytesIO
 
 # 页面设置
 st.set_page_config(
@@ -278,3 +280,4 @@ if __name__ == "__main__":
     else:
 
         main()
+
