@@ -297,7 +297,7 @@ def check_voter_status():
     if st.session_state.voter_id in st.session_state.all_votes_data:
         votes = st.session_state.all_votes_data[st.session_state.voter_id]
         
-        # 关键修复：只有session_state中的voted标志为True才算真正完成投票
+        # 关键修复：区分保存选择和最终提交
         if st.session_state.voted:
             return "voted"
         elif votes and len(votes) > 0:
@@ -307,7 +307,7 @@ def check_voter_status():
             return "started_but_not_voted"
     
     return "not_started"
-
+    
 def main():
     st.title("🏆 宣传口号评选系统")
 
@@ -348,7 +348,7 @@ def main():
     display_voting_interface()
     
 def display_voter_login():
-    """显示用户登录界面"""
+    """显示用户登录界面 - 修复版本"""
     st.subheader("请输入您的姓名")
     voter_id = st.text_input("姓名", placeholder="请输入您的姓名", key="voter_input")
     
@@ -356,32 +356,32 @@ def display_voter_login():
         if voter_id and voter_id.strip():
             clean_voter_id = voter_id.strip()
             
-            # 检查是否已投过票
+            # 检查是否已投过票（最终提交）
             if clean_voter_id in st.session_state.all_votes_data:
                 votes_count = len(st.session_state.all_votes_data[clean_voter_id])
-                if votes_count > 0:
-                    st.warning(f"该姓名已投过票（投了{votes_count}条口号），请使用其他姓名或联系管理员")
+                
+                # 关键修复：只有在session state中标记为voted才算真正完成投票
+                # 这里需要检查是否真的完成了最终提交
+                if st.session_state.get(f"{clean_voter_id}_voted", False):
+                    st.warning(f"该姓名已完成最终投票（投了{votes_count}条口号），请使用其他姓名或联系管理员")
                     return
                 else:
-                    # 有记录但未投票，继续使用
+                    # 有记录但未最终提交，继续编辑
                     st.session_state.voter_id = clean_voter_id
                     st.session_state.voted = False
                     st.rerun()
             else:
+                # 新用户
                 st.session_state.voter_id = clean_voter_id
+                st.session_state.voted = False
                 # 初始化该用户的投票数据
                 st.session_state.all_votes_data[clean_voter_id] = []
-                # 立即保存一次
-                if atomic_save_votes_data():
-                    st.session_state.voted = False
-                    st.rerun()
-                else:
-                    st.error("初始化失败，请重试")
+                st.rerun()
         else:
             st.error("请输入有效的姓名")
 
 def display_voting_result():
-    """显示投票结果"""
+    """显示投票结果 - 修复版本"""
     st.success("您已完成投票，感谢参与！")
     
     # 显示用户投票结果
@@ -397,9 +397,13 @@ def display_voting_result():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("重新投票", type="primary"):
-            # 清除该用户的投票数据
+            # 清除该用户的投票数据和投票状态
             if st.session_state.voter_id in st.session_state.all_votes_data:
                 st.session_state.all_votes_data[st.session_state.voter_id] = []
+                # 清除投票状态标记
+                if f"{st.session_state.voter_id}_voted" in st.session_state:
+                    del st.session_state[f"{st.session_state.voter_id}_voted"]
+                
                 atomic_save_votes_data()
             
             st.session_state.voted = False
@@ -407,7 +411,7 @@ def display_voting_result():
             st.rerun()
 
 def display_voting_interface():
-    """显示投票界面"""
+    """显示投票界面 - 修复版本"""
     if st.session_state.slogan_df is None:
         st.error("数据加载失败，请刷新页面重试")
         return
@@ -415,12 +419,13 @@ def display_voting_interface():
     df = st.session_state.slogan_df
 
     # 根据状态显示不同的标题
-    if st.session_state.voted:
+    voter_status = check_voter_status()
+    if voter_status == "voted":
         st.header(f"欢迎 {st.session_state.voter_id}，您已完成投票")
     else:
         st.header(f"欢迎 {st.session_state.voter_id}，请选出最符合南岳衡山全球旅游品牌宣传的口号")
     
-    # 获取当前用户的选择 - 每次都从最新数据获取
+    # 获取当前用户的选择
     current_selection = set(st.session_state.all_votes_data.get(st.session_state.voter_id, []))
     current_count = len(current_selection)
     max_votes = st.session_state.max_votes
@@ -428,13 +433,15 @@ def display_voting_interface():
     # 显示选择状态
     status_col1, status_col2 = st.columns([2, 1])
     with status_col1:
-        if current_count <= max_votes:
-            if st.session_state.voted:
-                st.success(f"您已完成投票，选择了 **{current_count}** 条口号")
-            else:
-                st.info(f"您最多可以选择 {max_votes} 条口号，当前已选择 **{current_count}** 条")
+        if voter_status == "voted":
+            st.success(f"您已完成投票，选择了 **{current_count}** 条口号")
+        elif voter_status == "editing":
+            st.warning(f"⚠️ 您有未提交的投票记录，当前已选择 **{current_count}** 条口号")
         else:
-            st.error(f"❌ 您已选择 {current_count} 条口号，超过限制 {max_votes} 条！请取消部分选择")
+            if current_count <= max_votes:
+                st.info(f"您最多可以选择 {max_votes} 条口号，当前已选择 **{current_count}** 条")
+            else:
+                st.error(f"❌ 您已选择 {current_count} 条口号，超过限制 {max_votes} 条！请取消部分选择")
     
     with status_col2:
         if st.button("🔄 刷新数据状态", key="refresh_status"):
@@ -442,7 +449,7 @@ def display_voting_interface():
             st.rerun()
 
     # 显示选择进度条（仅当未完成投票时）
-    if not st.session_state.voted:
+    if voter_status != "voted":
         progress = min(current_count / max_votes, 1.0)
         st.progress(progress, text=f"{current_count}/{max_votes}")
 
@@ -464,7 +471,7 @@ def display_voting_interface():
             for _, row in selected_slogans.iterrows():
                 st.write(f"✅ {row['序号']}. {row['口号']}")
             
-            if not st.session_state.voted and st.button("🗑️ 清空所有选择", key="clear_all"):
+            if voter_status != "voted" and st.button("🗑️ 清空所有选择", key="clear_all"):
                 st.session_state.all_votes_data[st.session_state.voter_id] = []
                 update_votes_dataframe()
                 if atomic_save_votes_data():
@@ -515,7 +522,7 @@ def display_voting_interface():
             slogan_text = row['口号']
             
             # 检查是否已达到最大选择限制
-            is_disabled = st.session_state.voted or (current_count >= max_votes and slogan_id not in current_selection)
+            is_disabled = (voter_status == "voted") or (current_count >= max_votes and slogan_id not in current_selection)
             
             # 创建选择框
             col1, col2 = st.columns([0.9, 0.1])
@@ -560,7 +567,7 @@ def display_voting_interface():
                     st.error("保存失败，请重试")
 
     # 单独的提交投票按钮（仅当未完成投票时显示）
-    if not st.session_state.voted:
+    if voter_status != "voted":
         st.markdown("---")
         st.write("### 完成选择后提交投票")
         
@@ -603,6 +610,8 @@ def display_voting_interface():
                 else:
                     # 标记为已投票
                     st.session_state.voted = True
+                    # 在session state中记录该用户已完成投票
+                    st.session_state[f"{st.session_state.voter_id}_voted"] = True
                     
                     # 最终保存
                     if atomic_save_votes_data():
@@ -620,7 +629,7 @@ def display_voting_interface():
                         st.rerun()
                     else:
                         st.error("投票提交失败，请重试或联系管理员")
-
+                        
 # 管理员界面保持不变
 def admin_interface():
     """管理员界面"""
@@ -834,4 +843,5 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
