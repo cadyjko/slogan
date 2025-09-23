@@ -716,7 +716,9 @@ def admin_interface():
                 st.info("未找到匹配的评委")
             else:
                 st.write(f"找到 {len(voters)} 位评委")
-                
+                 for i, voter in enumerate(voters, 1):
+                    voter_votes = st.session_state.all_votes_data[voter]
+                    vote_count = len(voter_votes)
                 for voter, voter_data in st.session_state.all_votes_data.items():
                     votes = voter_data.get("votes", [])
                     voted = voter_data.get("voted", False)
@@ -865,6 +867,7 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
 
