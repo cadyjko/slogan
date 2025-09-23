@@ -560,7 +560,7 @@ def display_voting_interface():
             if len(new_selections) > max_votes:
                 st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
             else:
-                # 更新选择
+                # 更新选择但不标记为已投票
                  st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
                  update_votes_dataframe()
                 
@@ -600,11 +600,10 @@ def display_voting_interface():
                 else:
                     st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
             
-            if st.button("✅ 最终提交投票", 
-                        type="primary", 
-                        use_container_width=True,
-                        disabled=not can_submit,
-                        key="final_submit"):
+           if st.button("✅ 最终提交投票", type="primary", disabled=not (1 <= current_count <= max_votes)):
+               # 标记为已投票
+               st.session_state.all_votes_data[voter_id]["voted"] = True
+               st.session_state.voted = True
                 
                 # 最终验证
                 if current_count == 0:
@@ -612,19 +611,10 @@ def display_voting_interface():
                 elif current_count > max_votes:
                     st.error(f"选择数量超过限制")
                 else:
-                    # 标记为已投票
-                    st.session_state.voted = True
-                    # 在session state中记录该用户已完成投票
-                    st.session_state[f"{st.session_state.voter_id}_voted"] = True
-                    
-                    # 最终保存
-                    if st.button("✅ 最终提交投票", type="primary", disabled=not (1 <= current_count <= max_votes)):
-                        st.session_state.all_votes_data[voter_id]["voted"] = True
-                        st.session_state.voted = True
-                        if atomic_save_votes_data():
-                            st.success("🎉 投票成功！")
-                            st.balloons()
-                            st.rerun()
+                   if atomic_save_votes_data():
+                        st.success("🎉 投票成功！")
+                        st.balloons()
+                        st.rerun()
                         # 显示投票结果
                         with st.expander("您的投票详情", expanded=True):
                             selected_slogans = df[df['序号'].isin(current_selection)]
@@ -875,6 +865,7 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
 
