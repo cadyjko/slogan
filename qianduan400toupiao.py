@@ -158,7 +158,7 @@ def try_recover_votes_data():
     return {}
 
 def save_all_votes_data():
-    """保存所有投票数据到文件 - 包含投票状态"""
+    """保存所有投票数据到文件"""
     try:
         # 使用原子操作保存
         return atomic_save_votes_data()
@@ -267,9 +267,11 @@ def initialize_data():
         loaded_data = load_all_votes_data()
         if loaded_data is not None:
             st.session_state.all_votes_data = loaded_data
-            # 清理空记录
-            st.session_state.all_votes_data = {k: v for k, v in st.session_state.all_votes_data.items() 
-                                            if v is not None and len(v) > 0}
+            # 同步当前用户的投票状态
+            if st.session_state.voter_id in st.session_state.all_votes_data:
+                voter_data = st.session_state.all_votes_data[st.session_state.voter_id]
+                st.session_state.voted = voter_data.get("voted", False)
+            
             update_votes_dataframe()
         
         st.session_state.data_loaded = True
@@ -280,11 +282,11 @@ def validate_votes_data():
         if not st.session_state.all_votes_data:
             return True
         
-        valid_count = 0
-        invalid_voters = []
-        
-        for voter, votes in st.session_state.all_votes_data.items():
-            if voter and isinstance(votes, list):
+        for voter, voter_data in st.session_state.all_votes_data.items():
+            if isinstance(voter_data, dict):
+                votes = voter_data.get("votes", [])
+                voted = voter_data.get("voted", False)
+                
                 # 验证投票ID都是有效的数字
                 valid_votes = []
                 for vote in votes:
@@ -294,18 +296,10 @@ def validate_votes_data():
                     except (ValueError, TypeError):
                         continue
                 
-                if valid_votes:
-                    st.session_state.all_votes_data[voter] = valid_votes
-                    valid_count += 1
-                else:
-                    invalid_voters.append(voter)
-            else:
-                invalid_voters.append(voter)
-        
-        # 删除无效的投票记录
-        for voter in invalid_voters:
-            if voter in st.session_state.all_votes_data:
-                del st.session_state.all_votes_data[voter]
+                st.session_state.all_votes_data[voter] = {
+                    "votes": valid_votes,
+                    "voted": bool(voted)
+                }
         
         return True
     except Exception as e:
@@ -336,7 +330,7 @@ def check_voter_status():
             return "started_but_not_voted"
     
     return "not_started"
-    
+
 def main():
     st.title("🏆 宣传口号评选系统")
 
@@ -356,9 +350,7 @@ def main():
         
     # 如果用户正在编辑（已保存选择但未最终提交）
     elif voter_status == "editing":
-        st.warning("⚠️ 检测到您已有投票记录，可以继续编辑或最终提交")
-        # 确保状态正确
-        st.session_state.voted = False
+        st.warning("⚠️ 检测到您有未提交的投票记录，可以继续编辑或最终提交")
         display_voting_interface()
         return
         
@@ -411,6 +403,33 @@ def display_voter_login():
                 st.rerun()
         else:
             st.error("请输入有效的姓名")
+
+def display_voting_result():
+    """显示投票结果 - 修复版本"""
+    st.success("您已完成投票，感谢参与！")
+    
+    voter_id = st.session_state.voter_id
+    voter_data = st.session_state.all_votes_data.get(voter_id, {"votes": [], "voted": False})
+    current_selection = voter_data.get("votes", [])
+    
+    # 显示用户投票结果
+    if st.session_state.slogan_df is not None and current_selection:
+        selected_slogans = st.session_state.slogan_df[st.session_state.slogan_df['序号'].isin(current_selection)]
+        
+        st.subheader("您的投票结果")
+        for _, row in selected_slogans.iterrows():
+            st.write(f"**{row['序号']}.** {row['口号']}")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("重新投票", type="primary"):
+            # 清除该用户的投票数据
+            st.session_state.all_votes_data[voter_id] = {"votes": [], "voted": False}
+            atomic_save_votes_data()
+            
+            st.session_state.voted = False
+            st.session_state.voter_id = ""
+            st.rerun()
 
 def display_voting_interface():
     """显示投票界面 - 修复版本"""
@@ -528,7 +547,7 @@ def display_voting_interface():
             slogan_text = row['口号']
             
             # 检查是否已达到最大选择限制
-            is_disabled = (voter_status == "voted") or (current_count >= max_votes and slogan_id not in current_selection)
+            is_disabled = (current_count >= max_votes and slogan_id not in current_selection)
             
             # 创建选择框
             col1, col2 = st.columns([0.9, 0.1])
@@ -561,97 +580,80 @@ def display_voting_interface():
                 st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
             else:
                 # 更新选择但不标记为已投票
-                 st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
-                 update_votes_dataframe()
+                st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
+                update_votes_dataframe()
                 
-            # 原子保存
-            if atomic_save_votes_data():
-                st.success("选择已保存！")
-            else:
-                st.error("保存失败，请重试")
-
-    # 单独的提交投票按钮（仅当未完成投票时显示）
-    if voter_status != "voted":
-        st.markdown("---")
-        st.write("### 完成选择后提交投票")
-        
-        # 重新获取最新数据
-        current_selection = st.session_state.all_votes_data.get(st.session_state.voter_id, [])
-        current_count = len(current_selection)
-        
-        # 显示最终选择状态
-        if current_count > 0:
-            st.info(f"您当前选择了 {current_count} 条口号")
-            
-            with st.expander("📋 查看最终选择", expanded=False):
-                selected_slogans = df[df['序号'].isin(current_selection)]
-                for _, row in selected_slogans.iterrows():
-                    st.write(f"✅ {row['序号']}. {row['口号']}")
-        
-        # 提交投票按钮
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            # 检查提交条件
-            can_submit = 1 <= current_count <= max_votes
-            
-            if not can_submit:
-                if current_count == 0:
-                    st.error("❌ 请至少选择一条口号")
+                # 原子保存
+                if atomic_save_votes_data():
+                    st.session_state.save_success = True
+                    st.success("选择已保存！")
+                    st.rerun()
                 else:
-                    st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
+                    st.error("保存失败，请重试")
+
+    # 单独的提交投票按钮
+    st.markdown("---")
+    st.write("### 完成选择后提交投票")
+    
+    # 重新获取最新数据
+    current_selection = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
+    current_count = len(current_selection)
+    
+    # 显示最终选择状态
+    if current_count > 0:
+        st.info(f"您当前选择了 {current_count} 条口号")
+        
+        with st.expander("📋 查看最终选择", expanded=False):
+            selected_slogans = df[df['序号'].isin(current_selection)]
+            for _, row in selected_slogans.iterrows():
+                st.write(f"✅ {row['序号']}. {row['口号']}")
+    
+    # 提交投票按钮
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # 检查提交条件
+        can_submit = 1 <= current_count <= max_votes
+        
+        if not can_submit:
+            if current_count == 0:
+                st.error("❌ 请至少选择一条口号")
+            else:
+                st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
+        
+        if st.button("✅ 最终提交投票", 
+                    type="primary", 
+                    use_container_width=True,
+                    disabled=not can_submit,
+                    key="final_submit"):
             
-            if st.button("✅ 最终提交投票", type="primary", disabled=not (1 <= current_count <= max_votes)):
+            # 最终验证
+            if current_count == 0:
+                st.error("请至少选择一条口号")
+            elif current_count > max_votes:
+                st.error(f"选择数量超过限制")
+            else:
                 # 标记为已投票
                 st.session_state.all_votes_data[voter_id]["voted"] = True
                 st.session_state.voted = True
                 
-                # 最终验证
-                if current_count == 0:
-                    st.error("请至少选择一条口号")
-                elif current_count > max_votes:
-                    st.error(f"选择数量超过限制")
+                # 最终保存
+                if atomic_save_votes_data():
+                    st.success(f"🎉 投票成功！您选择了 {current_count} 条口号。感谢您的参与！")
+                    st.balloons()
+                    
+                    # 显示投票结果
+                    with st.expander("您的投票详情", expanded=True):
+                        selected_slogans = df[df['序号'].isin(current_selection)]
+                        for _, row in selected_slogans.iterrows():
+                            st.write(f"**{row['序号']}.** {row['口号']}")
+                    
+                    # 确保数据持久化
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                   if atomic_save_votes_data():
-                        st.success("🎉 投票成功！")
-                        st.balloons()
-                        st.rerun()
-                        # 显示投票结果
-                        with st.expander("您的投票详情", expanded=True):
-                            selected_slogans = df[df['序号'].isin(current_selection)]
-                            for _, row in selected_slogans.iterrows():
-                                st.write(f"**{row['序号']}.** {row['口号']}")
-                        
-                        # 确保数据持久化
-                        time.sleep(1)
-                        st.rerun()
-                   else:
-                        st.error("投票提交失败，请重试或联系管理员")
-                        
-def display_voting_result():
-    """显示投票结果 - 修复版本"""
-    st.success("您已完成投票，感谢参与！")
-    
-    voter_id = st.session_state.voter_id
-    voter_data = st.session_state.all_votes_data.get(voter_id, {"votes": [], "voted": False})
-    current_selection = voter_data.get("votes", [])
-    
-    # 显示用户投票结果
-    if st.session_state.slogan_df is not None and current_selection:
-        selected_slogans = st.session_state.slogan_df[st.session_state.slogan_df['序号'].isin(current_selection)]
-        
-        st.subheader("您的投票结果")
-        for _, row in selected_slogans.iterrows():
-            st.write(f"**{row['序号']}.** {row['口号']}")
-    
-    if st.button("重新投票", type="primary"):
-        # 清除该用户的投票数据
-        st.session_state.all_votes_data[voter_id] = {"votes": [], "voted": False}
-        atomic_save_votes_data()
-        
-        st.session_state.voted = False
-        st.session_state.voter_id = ""
-        st.rerun()
-            
+                    st.error("投票提交失败，请重试或联系管理员")
+
+# 管理员界面
 def admin_interface():
     """管理员界面"""
     st.title("🏆 口号评选系统 - 管理员界面")
@@ -684,9 +686,8 @@ def admin_interface():
         return
 
     df = st.session_state.slogan_df
-    votes_df = st.session_state.votes_df
 
-    # 统计信息
+    # 统计信息 - 修复版本：只统计已投票的用户
     st.header("📊 投票统计")
     
     # 直接从all_votes_data统计，更准确
@@ -694,14 +695,19 @@ def admin_interface():
     total_votes = sum(len(v.get("votes", [])) for v in st.session_state.all_votes_data.values() if v.get("voted", False))
     avg_votes = total_votes / total_voters if total_voters > 0 else 0
 
-    col1, col2, col3 = st.columns(3)
+    # 额外统计：所有注册用户（包括未投票的）
+    total_registered = len(st.session_state.all_votes_data)
+    pending_voters = len([v for v in st.session_state.all_votes_data.values() if not v.get("voted", False) and len(v.get("votes", [])) > 0])
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("总参与人数", total_voters)
     col2.metric("总投票数", total_votes)
     col3.metric("人均投票数", f"{avg_votes:.1f}")
+    col4.metric("待提交人数", pending_voters)
 
     # 显示所有投票人 - 添加删除功能
-    if total_voters > 0:
-        with st.expander(f"👥 投票人员管理 ({total_voters}人)", expanded=True):
+    if total_registered > 0:
+        with st.expander(f"👥 投票人员管理 ({total_registered}人)", expanded=True):
             st.subheader("评委投票记录")
             
             # 搜索筛选
@@ -716,10 +722,9 @@ def admin_interface():
                 st.info("未找到匹配的评委")
             else:
                 st.write(f"找到 {len(voters)} 位评委")
-                 for i, voter in enumerate(voters, 1):
-                    voter_votes = st.session_state.all_votes_data[voter]
-                    vote_count = len(voter_votes)
-                for voter, voter_data in st.session_state.all_votes_data.items():
+                
+                for i, voter in enumerate(voters, 1):
+                    voter_data = st.session_state.all_votes_data[voter]
                     votes = voter_data.get("votes", [])
                     voted = voter_data.get("voted", False)
                     vote_count = len(votes)
@@ -791,7 +796,7 @@ def admin_interface():
                         # 显示投票详情（可展开）
                         with st.expander("查看投票详情", expanded=False):
                             if vote_count > 0:
-                                selected_slogans = df[df['序号'].isin(voter_votes)]
+                                selected_slogans = df[df['序号'].isin(votes)]
                                 for _, row in selected_slogans.iterrows():
                                     st.write(f"**{row['序号']}.** {row['口号']}")
                             else:
@@ -799,22 +804,24 @@ def admin_interface():
                         
                         st.markdown("---")
 
-    # 投票结果
+    # 投票结果 - 只统计已投票的用户
     st.header("🏅 投票结果")
     
     if total_votes == 0:
         st.info("暂无投票数据")
         return
 
-    # 从原始数据计算投票结果
+    # 从原始数据计算投票结果（只统计已投票的用户）
     vote_counts = {}
-    for votes in st.session_state.all_votes_data.values():
-        for slogan_id in votes:
-            try:
-                slogan_id_int = int(slogan_id)
-                vote_counts[slogan_id_int] = vote_counts.get(slogan_id_int, 0) + 1
-            except (ValueError, TypeError):
-                continue
+    for voter_data in st.session_state.all_votes_data.values():
+        if voter_data.get("voted", False):
+            votes = voter_data.get("votes", [])
+            for slogan_id in votes:
+                try:
+                    slogan_id_int = int(slogan_id)
+                    vote_counts[slogan_id_int] = vote_counts.get(slogan_id_int, 0) + 1
+                except (ValueError, TypeError):
+                    continue
 
     if not vote_counts:
         st.info("暂无有效的投票数据")
@@ -853,10 +860,10 @@ def admin_interface():
         fig.update_layout(height=600, yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig, use_container_width=True)
 
-    # 显示原始投票记录
+    # 显示原始投票记录（只显示已投票的记录）
     with st.expander("📋 查看原始投票记录", expanded=False):
-        if not votes_df.empty:
-            st.dataframe(votes_df, use_container_width=True)
+        if not st.session_state.votes_df.empty:
+            st.dataframe(st.session_state.votes_df, use_container_width=True)
         else:
             st.write("暂无投票记录数据")
 
@@ -867,12 +874,3 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
-
-
-
-
-
-
-
-
-
