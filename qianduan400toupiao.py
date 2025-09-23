@@ -287,7 +287,7 @@ def validate_votes_data():
         return False
 
 def check_voter_status():
-    """检查当前用户的投票状态"""
+    """检查当前用户的投票状态 - 修复版本"""
     if not st.session_state.voter_id:
         return "not_started"
     
@@ -296,13 +296,13 @@ def check_voter_status():
     
     if st.session_state.voter_id in st.session_state.all_votes_data:
         votes = st.session_state.all_votes_data[st.session_state.voter_id]
-        if votes and len(votes) > 0:
-            # 检查是否已经标记为已投票
-            if st.session_state.voted:
-                return "voted"
-            else:
-                # 有投票记录但session state未标记为已投票，说明是中途进入
-                return "editing"
+        
+        # 关键修复：只有session_state中的voted标志为True才算真正完成投票
+        if st.session_state.voted:
+            return "voted"
+        elif votes and len(votes) > 0:
+            # 有投票记录但session state未标记为已投票，说明是保存了选择但未最终提交
+            return "editing"
         else:
             return "started_but_not_voted"
     
@@ -325,12 +325,17 @@ def main():
         display_voting_result()
         return
         
-    # 如果用户已开始但未完成投票或正在编辑
-    elif voter_status in ["started_but_not_voted", "editing"]:
-        if voter_status == "editing":
-            st.warning("⚠️ 检测到您已有投票记录，正在进入编辑模式")
-        else:
-            st.info("检测到您有未完成的投票，请继续完成投票")
+    # 如果用户正在编辑（已保存选择但未最终提交）
+    elif voter_status == "editing":
+        st.warning("⚠️ 检测到您已有投票记录，可以继续编辑或最终提交")
+        # 确保状态正确
+        st.session_state.voted = False
+        display_voting_interface()
+        return
+        
+    # 如果用户已开始但未投票
+    elif voter_status == "started_but_not_voted":
+        st.info("请继续完成投票")
         display_voting_interface()
         return
 
@@ -341,7 +346,7 @@ def main():
 
     # 显示投票界面
     display_voting_interface()
-
+    
 def display_voter_login():
     """显示用户登录界面"""
     st.subheader("请输入您的姓名")
@@ -829,3 +834,4 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
