@@ -564,11 +564,11 @@ def display_voting_interface():
                  st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
                  update_votes_dataframe()
                 
-                # 原子保存
-                if atomic_save_votes_data():
-                    st.success("选择已保存！")
-                else:
-                    st.error("保存失败，请重试")
+            # 原子保存
+            if atomic_save_votes_data():
+                st.success("选择已保存！")
+             else:
+                st.error("保存失败，请重试")
 
     # 单独的提交投票按钮（仅当未完成投票时显示）
     if voter_status != "voted":
@@ -865,6 +865,7 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
 
