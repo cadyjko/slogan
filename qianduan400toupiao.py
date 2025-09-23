@@ -405,8 +405,8 @@ def display_voter_login():
             st.error("请输入有效的姓名")
 
 def display_voting_result():
-    """显示投票结果 - 修复版本"""
-    st.success("您已完成投票，感谢参与！")
+    """显示投票结果 - 去掉重新投票按钮版本"""
+    st.success("🎉 您已完成投票，感谢参与！")
     
     voter_id = st.session_state.voter_id
     voter_data = st.session_state.all_votes_data.get(voter_id, {"votes": [], "voted": False})
@@ -420,16 +420,8 @@ def display_voting_result():
         for _, row in selected_slogans.iterrows():
             st.write(f"**{row['序号']}.** {row['口号']}")
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("重新投票", type="primary"):
-            # 清除该用户的投票数据
-            st.session_state.all_votes_data[voter_id] = {"votes": [], "voted": False}
-            atomic_save_votes_data()
-            
-            st.session_state.voted = False
-            st.session_state.voter_id = ""
-            st.rerun()
+    # 去掉重新投票按钮，只显示感谢信息
+    st.info("💫 您的投票已成功提交，如需再次修改请联系管理员。")
 
 def display_voting_interface():
     """显示投票界面 - 修复版本"""
