@@ -600,10 +600,10 @@ def display_voting_interface():
                 else:
                     st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
             
-           if st.button("✅ 最终提交投票", type="primary", disabled=not (1 <= current_count <= max_votes)):
-               # 标记为已投票
-               st.session_state.all_votes_data[voter_id]["voted"] = True
-               st.session_state.voted = True
+            if st.button("✅ 最终提交投票", type="primary", disabled=not (1 <= current_count <= max_votes)):
+                # 标记为已投票
+                st.session_state.all_votes_data[voter_id]["voted"] = True
+                st.session_state.voted = True
                 
                 # 最终验证
                 if current_count == 0:
@@ -865,6 +865,7 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
 
