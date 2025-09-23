@@ -624,7 +624,7 @@ def display_voting_interface():
                         # 确保数据持久化
                         time.sleep(1)
                         st.rerun()
-                    else:
+                   else:
                         st.error("投票提交失败，请重试或联系管理员")
                         
 def display_voting_result():
@@ -865,6 +865,7 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
 
 
 
