@@ -579,9 +579,104 @@ def admin_interface():
     except Exception as e:
         st.error(f"获取数据库信息失败: {e}")
 
+        # 显示所有投票人 - 添加删除功能
     if total_registered > 0:
         with st.expander(f"👥 投票人员管理 ({total_registered}人)", expanded=True):
-            # ... 管理员界面其他功能保持不变
+            st.subheader("评委投票记录")
+            
+            # 搜索筛选
+            search_voter = st.text_input("搜索评委姓名", placeholder="输入评委姓名搜索", key="search_voter")
+            
+            voters = sorted(st.session_state.all_votes_data.keys())
+            
+            if search_voter:
+                voters = [v for v in voters if search_voter.lower() in v.lower()]
+            
+            if not voters:
+                st.info("未找到匹配的评委")
+            else:
+                st.write(f"找到 {len(voters)} 位评委")
+                
+                for i, voter in enumerate(voters, 1):
+                    voter_data = st.session_state.all_votes_data[voter]
+                    votes = voter_data.get("votes", [])
+                    voted = voter_data.get("voted", False)
+                    vote_count = len(votes)
+                    
+                    # 状态标识
+                    if voted:
+                        status = "✅ 已投票"
+                        status_color = "green"
+                    elif vote_count > 0:
+                        status = "⏸️ 未提交"
+                        status_color = "orange"
+                    else:
+                        status = "⏸️ 未投票"
+                        status_color = "gray"
+                    
+                    # 创建卡片式布局
+                    with st.container():
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                        
+                        with col1:
+                            st.write(f"**{voter}**")
+                        
+                        with col2:
+                            st.write(f"投票数: **{vote_count}**")
+                        
+                        with col3:
+                            st.markdown(f"<span style='color: {status_color}'>{status}</span>", 
+                                      unsafe_allow_html=True)
+                        
+                        with col4:
+                            # 删除按钮
+                            delete_key = f"delete_{voter}_{i}"
+                            if st.button("🗑️", key=delete_key, help=f"删除 {voter} 的投票记录"):
+                                # 确认删除
+                                if st.session_state.get(f"confirm_delete_{voter}") != True:
+                                    st.session_state[f"confirm_delete_{voter}"] = True
+                                    st.rerun()
+                                else:
+                                    # 执行删除
+                                    del st.session_state.all_votes_data[voter]
+                                    update_votes_dataframe()
+                                    if atomic_save_votes_data():
+                                        st.success(f"已删除评委 {voter} 的投票记录")
+                                        st.session_state[f"confirm_delete_{voter}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("删除失败")
+                        
+                        # 确认删除提示
+                        if st.session_state.get(f"confirm_delete_{voter}") == True:
+                            st.warning(f"确定要删除评委 **{voter}** 的投票记录吗？此操作不可恢复！")
+                            col1, col2, col3 = st.columns([1, 1, 2])
+                            with col1:
+                                if st.button("✅ 确认删除", key=f"confirm_{voter}"):
+                                    # 执行删除
+                                    del st.session_state.all_votes_data[voter]
+                                    update_votes_dataframe()
+                                    if atomic_save_votes_data():
+                                        st.success(f"已删除评委 {voter} 的投票记录")
+                                        st.session_state[f"confirm_delete_{voter}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("删除失败")
+                            with col2:
+                                if st.button("❌ 取消", key=f"cancel_{voter}"):
+                                    st.session_state[f"confirm_delete_{voter}"] = False
+                                    st.rerun()
+                        
+                        # 显示投票详情（可展开）
+                        with st.expander("查看投票详情", expanded=False):
+                            if vote_count > 0:
+                                selected_slogans = df[df['序号'].isin(votes)]
+                                for _, row in selected_slogans.iterrows():
+                                    st.write(f"**{row['序号']}.** {row['口号']}")
+                            else:
+                                st.write("暂无投票记录")
+                        
+                        st.markdown("---")
 
     # 投票结果统计
     st.header("🏅 投票结果")
@@ -649,3 +744,4 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+
